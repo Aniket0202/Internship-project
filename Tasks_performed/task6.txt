@@ -1,0 +1,135 @@
+# task 6 Stacked area chart: cumulative installs over time per category
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import pytz
+import numpy as np
+import re
+
+# -------------------------
+# Sample data (replace with your data)
+# Columns needed: ['App','Category','Date','Installs','Avg_Rating','Reviews','Size_MB']
+# Date per row (monthly preferred)
+# -------------------------
+data = [
+    # App, Category, Date, Installs, Avg_Rating, Reviews, Size_MB
+    ('TravelLite','Travel & Local','2025-01-01',20000,4.3,1500,25),
+    ('TravelLite','Travel & Local','2025-02-01',32000,4.3,1500,25),
+    ('ProdTool','Productivity','2025-01-01',15000,4.5,1800,30),
+    ('ProdTool','Productivity','2025-02-01',21000,4.5,1800,30),
+    ('PhotoArt','Photography','2025-01-01',8000,4.4,2000,35),
+    ('PhotoArt','Photography','2025-02-01',12000,4.4,2000,35),
+    # ... add your monthly rows
+]
+df = pd.DataFrame(data, columns=['App','Category','Date','Installs','Avg_Rating','Reviews','Size_MB'])
+df['Date'] = pd.to_datetime(df['Date'])
+
+# -------------------------
+# FILTERS:
+# - Avg_Rating >= 4.2
+# - App name contains NO numbers
+# - Category startswith 'T' or 'P' (case-insensitive)
+# - Reviews > 1000
+# - Size between 20 and 80 MB
+# -------------------------
+mask = (
+    (df['Avg_Rating'] >= 4.2) &
+    (~df['App'].str.contains(r'\d')) &  # no digits in app name
+    (df['Category'].str.upper().str.startswith(tuple(['T','P']))) &
+    (df['Reviews'] > 1000) &
+    (df['Size_MB'].between(20,80))
+)
+df_filtered = df[mask].copy()
+
+if df_filtered.empty:
+    print("No data after filters. Chart not produced.")
+else:
+    # Translate legend names
+    translations = {
+        'Travel & Local': 'Voyage et Local',   # French
+        'Productivity': 'Productividad',        # Spanish
+        'Photography': '写真'                   # Japanese
+    }
+    df_filtered['Category_display'] = df_filtered['Category'].map(translations).fillna(df_filtered['Category'])
+
+    # Aggregate installs per month per category
+    df_filtered['Month'] = df_filtered['Date'].dt.to_period('M').dt.to_timestamp()
+    monthly = df_filtered.groupby(['Month','Category_display'])['Installs'].sum().reset_index()
+    monthly = monthly.sort_values(['Category_display','Month'])
+
+    # Pivot for stacked area
+    pivot = monthly.pivot(index='Month', columns='Category_display', values='Installs').fillna(0)
+    # Compute MoM % change per category
+    mom = pivot.pct_change() * 100  # percent
+    # Identify months where any category > 25% MoM increase
+    high_growth_mask = (mom > 25)
+
+    # Build stacked area with Plotly: we'll plot each category as an area trace stacked
+    ist = pytz.timezone('Asia/Kolkata')
+    now = datetime.now(ist)
+    hour = now.hour
+
+    if 16 <= hour < 18:
+        fig = go.Figure()
+        base = np.zeros(len(pivot))
+        categories = pivot.columns.tolist()
+        # choose base colors
+        colors = px.colors.qualitative.Plotly
+        # ensure enough colors
+        while len(colors) < len(categories):
+            colors = colors + colors
+
+        for i, cat in enumerate(categories):
+            y = pivot[cat].values
+            # For months where this category experienced >25% MoM, increase color intensity (darker)
+            cat_mom_high = high_growth_mask[cat].fillna(False).values
+            # We'll create per-month segments to simulate intensity change:
+            # Build x segments and y segments: we will add multiple traces where intensity differs
+            # For simplicity, split into contiguous segments of same 'high' flag
+            idx = np.arange(len(pivot))
+            segments = []
+            start = 0
+            for j in range(1, len(idx)+1):
+                if j == len(idx) or cat_mom_high[j] != cat_mom_high[start] if j < len(idx) else True:
+                    segments.append((start, j))
+                    start = j
+            # Add traces per segment with slightly different color intensity
+            for seg in segments:
+                s, e = seg
+                x_seg = pivot.index[s:e]
+                # stacked area: we plot ybase + segment y
+                y_seg = base[s:e] + y[s:e]
+                color = colors[i]
+                # darken color when high growth
+                if cat_mom_high[s]:
+                    fillcolor = "rgba(0,0,0,0.15)"
+                    # to keep it readable overlay a darker shade of original color:
+                    fillcolor = px.colors.hex_to_rgb(colors[i])
+                    fillcolor = f"rgba({fillcolor[0]},{fillcolor[1]},{fillcolor[2]},0.9)"
+                else:
+                    # normal opacity
+                    rgb = px.colors.hex_to_rgb(colors[i])
+                    fillcolor = f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.6)"
+
+                fig.add_trace(go.Scatter(
+                    x=list(x_seg) + list(x_seg[::-1]),
+                    y=list(base[s:e]) + list((base[s:e] + y[s:e])[::-1]),
+                    fill='toself',
+                    fillcolor=fillcolor,
+                    line=dict(width=0),
+                    name=cat if seg == segments[0] else None,
+                    hoverinfo='x+y+name'
+                ))
+            # update base for stacking
+            base = base + y
+
+        fig.update_layout(
+            title='Cumulative Installs Over Time (stacked by category)',
+            xaxis_title='Month',
+            yaxis_title='Installs',
+            template='plotly_white',
+            showlegend=True
+        )
+        fig.show()
+    else:

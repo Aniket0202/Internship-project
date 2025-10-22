@@ -1,0 +1,99 @@
+#task3
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime
+import pytz
+
+# -----------------------------
+# Sample Dataset (replace this with your actual data)
+# -----------------------------
+data = {
+    'App': ['FitLife', 'BudgetPro+', 'EduLearn', 'PhotoMaster', 'MusicZone', 'TravelGo', 'NoteEasy', 'CalmMind', 'PlayMore', 'BookSpace'],
+    'Category': ['Health', 'Finance', 'Education', 'Photography', 'Music', 'Travel', 'Productivity', 'Health', 'Games', 'Books'],
+    'Type': ['Free', 'Paid', 'Free', 'Paid', 'Free', 'Paid', 'Free', 'Paid', 'Free', 'Paid'],
+    'Installs': [500000, 300000, 150000, 20000, 2500000, 45000, 12000, 50000, 1000000, 25000],
+    'Revenue': [0, 50000, 0, 20000, 0, 15000, 0, 10000, 0, 30000],
+    'Android_Version': [5.0, 5.1, 4.1, 6.0, 7.0, 4.2, 4.3, 4.4, 5.0, 6.0],
+    'Size_MB': [25, 30, 16, 20, 50, 18, 19, 25, 40, 22],
+    'Content_Rating': ['Everyone', 'Everyone', 'Everyone', 'Teen', 'Everyone', 'Everyone', 'Everyone', 'Everyone', 'Everyone', 'Everyone']
+}
+
+df = pd.DataFrame(data)
+
+# -----------------------------
+# Apply all required filters
+# -----------------------------
+filtered_df = df[
+    (df['Installs'] >= 10000) &
+    (df['Revenue'] >= 10000) &
+    (df['Android_Version'] > 4.0) &
+    (df['Size_MB'] > 15) &
+    (df['Content_Rating'] == 'Everyone') &
+    (df['App'].str.len() <= 30)
+]
+
+# -----------------------------
+# Select Top 3 Categories by average installs
+# -----------------------------
+top3_categories = (
+    filtered_df.groupby('Category')['Installs']
+    .mean()
+    .nlargest(3)
+    .index
+)
+filtered_df = filtered_df[filtered_df['Category'].isin(top3_categories)]
+
+# -----------------------------
+# Aggregate data for Free vs Paid apps
+# -----------------------------
+agg = (
+    filtered_df.groupby('Type')
+    .agg({'Installs': 'mean', 'Revenue': 'mean'})
+    .reset_index()
+)
+
+# -----------------------------
+# Time restriction: show only between 1 PM - 2 PM IST
+# -----------------------------
+ist = pytz.timezone('Asia/Kolkata')
+current_time = datetime.now(ist)
+hour = current_time.hour
+
+if 13 <= hour < 14:
+    # -----------------------------
+    # Create Dual-Axis Chart
+    # -----------------------------
+    fig = go.Figure()
+
+    # Bar chart for Average Installs
+    fig.add_trace(go.Bar(
+        x=agg['Type'],
+        y=agg['Installs'],
+        name='Average Installs',
+        yaxis='y1',
+        marker_color='skyblue'
+    ))
+
+    # Line chart for Average Revenue
+    fig.add_trace(go.Scatter(
+        x=agg['Type'],
+        y=agg['Revenue'],
+        name='Average Revenue ($)',
+        yaxis='y2',
+        mode='lines+markers',
+        line=dict(color='darkorange', width=3)
+    ))
+
+    # Configure dual axes
+    fig.update_layout(
+        title='Comparison of Average Installs and Revenue (Free vs Paid Apps)',
+        xaxis=dict(title='App Type'),
+        yaxis=dict(title='Average Installs', side='left'),
+        yaxis2=dict(title='Average Revenue ($)', overlaying='y', side='right'),
+        legend=dict(x=0.5, y=1.1, orientation='h'),
+        template='plotly_white'
+    )
+
+    fig.show()
+
+else:

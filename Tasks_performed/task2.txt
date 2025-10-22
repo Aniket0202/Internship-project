@@ -1,0 +1,64 @@
+#task2
+import pandas as pd
+import plotly.express as px
+from datetime import datetime
+import pytz
+
+# -----------------------------
+# Sample DataFrame (replace this with your actual data)
+# -----------------------------
+data = {
+    'Country': ['India', 'USA', 'Brazil', 'Germany', 'UK', 'Japan', 'Canada', 'France', 'Australia', 'Mexico'],
+    'Category': ['Education', 'Health', 'Finance', 'Music', 'Travel', 'Tools', 'Productivity', 'Shopping', 'Entertainment', 'Books'],
+    'Installs': [2500000, 1800000, 900000, 1200000, 3000000, 850000, 2300000, 700000, 2600000, 400000]
+}
+
+df = pd.DataFrame(data)
+
+# -----------------------------
+# Apply all filters
+# -----------------------------
+
+# 1️⃣ Exclude categories starting with A, C, G, or S
+df = df[~df['Category'].str.startswith(('A', 'C', 'G', 'S'))]
+
+# 2️⃣ Take only top 5 categories by installs
+top5_categories = df.groupby('Category')['Installs'].sum().nlargest(5).index
+df = df[df['Category'].isin(top5_categories)]
+
+# 3️⃣ Add a highlight column for installs > 1 million
+df['Highlight'] = df['Installs'].apply(lambda x: 'Installs > 1M' if x > 1_000_000 else 'Below 1M')
+
+# -----------------------------
+# Time restriction (6 PM to 8 PM IST)
+# -----------------------------
+ist = pytz.timezone('Asia/Kolkata')
+current_time = datetime.now(ist)
+hour = current_time.hour
+
+if 18 <= hour < 20:
+    # -----------------------------
+    # Create Choropleth Map
+    # -----------------------------
+    fig = px.choropleth(
+        df,
+        locations='Country',
+        locationmode='country names',
+        color='Installs',
+        hover_name='Category',
+        hover_data=['Installs', 'Highlight'],
+        title='Global Installs by App Category (Top 5 Categories)',
+        color_continuous_scale='Viridis'
+    )
+
+    # Highlight countries where installs > 1M
+    fig.update_traces(marker_line_width=1.5, marker_line_color='white')
+
+    fig.update_layout(
+        geo=dict(showframe=False, showcoastlines=True, projection_type='equirectangular'),
+        title_x=0.5
+    )
+
+    fig.show()
+
+else:

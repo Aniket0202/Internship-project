@@ -1,0 +1,100 @@
+#  task 5 Bubble chart: size (MB) vs average rating; bubble size = installs
+import pandas as pd
+import plotly.express as px
+from datetime import datetime
+import pytz
+import numpy as np
+
+# -------------------------
+# Sample data (replace with your data)
+# Columns needed: ['App','Category','Size_MB','Avg_Rating','Installs','Reviews','Sentiment_Subjectivity']
+# -------------------------
+data = [
+    ('PlayFun','Game',50,4.2,200000,1200,0.6),
+    ('BeautyPro','Beauty',30,4.0,80000,700,0.7),
+    ('BizSuite','Business',45,4.3,150000,900,0.55),
+    ('ComicHub','Comics',25,3.8,60000,650,0.6),
+    ('ChatNow','Communication',18,3.9,70000,800,0.65),
+    ('LoveMatch','Dating',22,4.1,90000,1100,0.52),
+    ('ShowTime','Entertainment',60,4.4,300000,1300,0.7),
+    ('ConnectU','Social',40,3.6,120000,1000,0.8),
+    ('EventPro','Event',35,3.7,55000,600,0.51),
+    # ... add your real rows
+]
+df = pd.DataFrame(data, columns=['App','Category','Size_MB','Avg_Rating','Installs','Reviews','Sentiment_Subjectivity'])
+
+# Standardize category spellings (if needed)
+# Interpret typos: commics -> Comics, commication -> Communication
+df['Category'] = df['Category'].replace({
+    'commics':'Comics','commication':'Communication'
+})
+
+# -------------------------
+# FILTERS:
+# - rating > 3.5
+# - reviews > 500
+# - installs > 50k
+# - sentiment subjectivity > 0.5
+# - app name should NOT contain letter 'S' (case-insensitive)
+# - categories restricted to specified list
+# -------------------------
+allowed_categories = ['Game','Beauty','Business','Comics','Communication','Dating','Entertainment','Social','Event']
+mask = (
+    (df['Avg_Rating'] > 3.5) &
+    (df['Reviews'] > 500) &
+    (df['Installs'] > 50_000) &
+    (df['Sentiment_Subjectivity'] > 0.5) &
+    (~df['App'].str.lower().str.contains('s')) &
+    (df['Category'].isin(allowed_categories))
+)
+df_filtered = df[mask].copy()
+
+# Translate some categories for display
+translations = {
+    'Beauty': 'सौंदर्य',    # Hindi
+    'Business': 'வணிகம்',  # Tamil
+    'Dating': 'Partnersuche' # German
+}
+df_filtered['Category_display'] = df_filtered['Category'].map(translations).fillna(df_filtered['Category'])
+
+# For bubble scaling, convert installs to marker_size
+df_filtered['marker_size'] = np.sqrt(df_filtered['Installs'])/10  # tweak as needed
+
+# Time-window check
+ist = pytz.timezone('Asia/Kolkata')
+now = datetime.now(ist)
+hour = now.hour
+
+if 17 <= hour < 19:
+    # color mapping: make Game category pink, others default color scale
+    df_filtered['color'] = df_filtered['Category'].apply(lambda c: 'pink' if c == 'Game' else 'other')
+
+    # Use Plotly Express for bubble chart but set custom colors
+    fig = px.scatter(
+        df_filtered,
+        x='Size_MB',
+        y='Avg_Rating',
+        size='marker_size',
+        size_max=60,
+        hover_name='App',
+        hover_data=['Category_display','Installs','Reviews','Sentiment_Subjectivity'],
+        facet_col=None,
+        title='App Size vs Average Rating (bubble ~ installs)',
+        labels={'Size_MB':'Size (MB)','Avg_Rating':'Average Rating'}
+    )
+
+    # Force pink color for Game rows
+    for i, row in df_filtered.iterrows():
+        if row['Category'] == 'Game':
+            fig.add_trace(go.Scatter(
+                x=[row['Size_MB']],
+                y=[row['Avg_Rating']],
+                mode='markers',
+                marker=dict(size=row['marker_size']*1.0, color='pink', line=dict(width=1, color='black')),
+                name='Game (highlight)',
+                hovertemplate=f"{row['App']}<br>Category: {row['Category_display']}<br>Installs: {row['Installs']}"
+            ))
+    # Remove duplicates of original points for Games by filtering traces: (kept simple by overlaying highlight)
+    fig.update_layout(template='plotly_white')
+    fig.show()
+else:

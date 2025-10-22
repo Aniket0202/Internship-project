@@ -1,0 +1,52 @@
+#Task1
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+import pytz
+
+# Sample dataset (replace this with your actual DataFrame)
+data = {
+    'Category': ['Game', 'Productivity', 'Social', 'Education', 'Health', 'Finance', 'Tools', 'Shopping', 'Travel', 'Music', 'News'],
+    'Average_Rating': [4.3, 4.1, 4.2, 3.9, 4.5, 4.4, 4.6, 4.0, 4.3, 4.2, 3.8],
+    'Total_Reviews': [120000, 85000, 92000, 30000, 75000, 62000, 110000, 55000, 40000, 98000, 25000],
+    'Installs': [5000000, 4200000, 4600000, 2500000, 2800000, 2700000, 4900000, 2600000, 2400000, 4100000, 1500000],
+    'Size_MB': [15, 12, 20, 8, 11, 13, 22, 14, 9, 10, 7],
+    'Last_Update': ['2025-01-15', '2025-01-25', '2024-12-20', '2025-01-10', '2025-01-05', '2025-02-02',
+                    '2025-01-18', '2025-01-08', '2025-03-12', '2025-01-30', '2025-01-22']
+}
+
+df = pd.DataFrame(data)
+
+# Filter conditions
+df['Last_Update'] = pd.to_datetime(df['Last_Update'])
+df = df[
+    (df['Average_Rating'] >= 4.0) &
+    (df['Size_MB'] >= 10) &
+    (df['Last_Update'].dt.month == 1)
+]
+
+# Select top 10 by installs
+top10 = df.nlargest(10, 'Installs')
+
+# Get current IST time
+ist = pytz.timezone('Asia/Kolkata')
+current_time = datetime.now(ist)
+hour = current_time.hour
+
+# Show chart only between 3 PM and 5 PM IST
+if 15 <= hour < 17:
+    # Create grouped bar chart
+    x = range(len(top10))
+    width = 0.35
+
+    plt.bar([i - width/2 for i in x], top10['Average_Rating'], width=width, label='Average Rating')
+    plt.bar([i + width/2 for i in x], top10['Total_Reviews'], width=width, label='Total Reviews')
+
+    plt.xticks(x, top10['Category'], rotation=45)
+    plt.xlabel('App Category')
+    plt.ylabel('Value')
+    plt.title('Average Rating vs Total Reviews (Top 10 Categories by Installs)')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+else:

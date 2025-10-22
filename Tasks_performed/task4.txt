@@ -1,0 +1,110 @@
+#  task 4 Time series line chart: total installs over time, segmented by category
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import pytz
+import numpy as np
+
+# -------------------------
+# Sample data (replace with your DataFrame)
+# Columns needed: ['App','Category','Date','Installs','Reviews']
+# Date should be parseable (YYYY-MM-DD); Installs cumulative per row or installs per that date
+# -------------------------
+data = [
+    # App, Category, Date, Installs, Reviews
+    ('AlphaApp', 'Education', '2025-01-01', 10000, 800),
+    ('BetaOne', 'Education', '2025-02-01', 13000, 850),
+    ('CoolApp', 'Business', '2025-01-01', 9000, 600),
+    ('BizPro', 'Business', '2025-02-01', 12000, 700),
+    ('BeautyX', 'Beauty', '2025-01-01', 8000, 900),
+    ('BeautyX', 'Beauty', '2025-02-01', 10500, 950),
+    ('EntertainmentA','Entertainment','2025-01-01',15000,1200),
+    ('EntertainmentA','Entertainment','2025-02-01',19000,1300),
+    # ... add your real monthly rows here
+]
+df = pd.DataFrame(data, columns=['App','Category','Date','Installs','Reviews'])
+df['Date'] = pd.to_datetime(df['Date'])
+
+# -------------------------
+# FILTERS
+# - App name should NOT start with x,y,z (case-insensitive)
+# - App name should NOT contain letter 'S' (case-insensitive)
+# - Category startswith E or C or B (case-insensitive)
+# - Reviews > 500
+# -------------------------
+mask = (
+    ~df['App'].str.lower().str.startswith(tuple(['x','y','z'])) &
+    ~df['App'].str.lower().str.contains('s') &
+    df['Category'].str.upper().str.startswith(tuple(['E','C','B'])) &
+    (df['Reviews'] > 500)
+)
+df_filtered = df[mask].copy()
+
+if df_filtered.empty:
+    print("No data after filters. Chart not produced.")
+else:
+    # Map translations for specific categories
+    translations = {
+        'Beauty': 'सौंदर्य',          # Hindi
+        'Business': 'வணிகம்',        # Tamil
+        'Dating': 'Partnersuche'     # German (use 'Partnersuche')
+    }
+    # Apply translation to Category labels (if matched); keep others as-is
+    df_filtered['Category_display'] = df_filtered['Category'].map(translations).fillna(df_filtered['Category'])
+
+    # Aggregate installs per month per category (sum)
+    df_filtered['Month'] = df_filtered['Date'].dt.to_period('M').dt.to_timestamp()
+    monthly = df_filtered.groupby(['Month','Category_display'])['Installs'].sum().reset_index()
+
+    # Compute month-over-month percent change per category
+    monthly = monthly.sort_values(['Category_display','Month'])
+    monthly['MoM_pct'] = monthly.groupby('Category_display')['Installs'].pct_change() * 100
+    monthly['MoM_pct'] = monthly['MoM_pct'].fillna(0)
+
+    # Build plot: one line per category; shade where MoM_pct > 20% under the curve for that category
+    ist = pytz.timezone('Asia/Kolkata')
+    now_ist = datetime.now(ist)
+    hour = now_ist.hour
+
+    if 18 <= hour < 21:
+        fig = go.Figure()
+        categories = monthly['Category_display'].unique()
+        for cat in categories:
+            cat_df = monthly[monthly['Category_display'] == cat]
+            fig.add_trace(go.Scatter(
+                x=cat_df['Month'],
+                y=cat_df['Installs'],
+                mode='lines+markers',
+                name=cat,
+                hovertemplate='%{x|%b %Y}<br>Installs: %{y}<br>MoM %: %{customdata:.1f}%',
+                customdata=cat_df['MoM_pct']
+            ))
+            # Shade segments where MoM_pct > 20% (fill to y=0 for that segment)
+            high_growth = cat_df[cat_df['MoM_pct'] > 20]
+            # For each month where condition is true, draw a filled trapezoid between that month and previous/next for visibility
+            for idx in high_growth.index:
+                # draw a filled polygon across that month point
+                x_val = cat_df.loc[idx, 'Month']
+                y_val = cat_df.loc[idx, 'Installs']
+                # tiny shading region: from start of month to end of month
+                start = pd.Timestamp(x_val).to_pydatetime()
+                end = (pd.Timestamp(x_val) + pd.DateOffset(months=1)).to_pydatetime()
+                fig.add_trace(go.Scatter(
+                    x=[start, end, end, start],
+                    y=[0, 0, y_val, y_val],
+                    fill='toself',
+                    fillcolor='rgba(200,200,200,0.25)',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+
+        fig.update_layout(
+            title='Total Installs Over Time (by Category)',
+            xaxis_title='Month',
+            yaxis_title='Total Installs',
+            template='plotly_white'
+        )
+        fig.show()
+    else:
